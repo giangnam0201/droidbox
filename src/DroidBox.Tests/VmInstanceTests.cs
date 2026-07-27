@@ -11,7 +11,7 @@ public class VmInstanceTests
         {
             Id = "abc123",
             VersionId = "7.1",
-            OverlayPath = @"C:\vms\abc123.qcow2",
+            DiskPath = @"C:\vms\abc123.qcow2",
         };
 
         Assert.Equal(VmState.Stopped, vm.State);
@@ -25,7 +25,7 @@ public class VmInstanceTests
         {
             Id = "abc123",
             VersionId = "7.1",
-            OverlayPath = @"C:\vms\abc123.qcow2",
+            DiskPath = @"C:\vms\abc123.qcow2",
             AdbHostPort = 5555,
         };
 
@@ -35,7 +35,7 @@ public class VmInstanceTests
         Assert.NotNull(restored);
         Assert.Equal(vm.Id, restored!.Id);
         Assert.Equal(vm.VersionId, restored.VersionId);
-        Assert.Equal(vm.OverlayPath, restored.OverlayPath);
+        Assert.Equal(vm.DiskPath, restored.DiskPath);
         Assert.Equal(vm.AdbHostPort, restored.AdbHostPort);
     }
 }

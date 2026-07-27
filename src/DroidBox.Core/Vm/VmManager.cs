@@ -48,19 +48,22 @@ public sealed class VmManager
         var golden = await _goldenStore.EnsureAvailableAsync(version, downloadProgress, ct);
 
         var id = Guid.NewGuid().ToString("N")[..8];
-        var overlayPath = Path.Combine(PathConfig.VmsDir, $"{id}.qcow2");
+        var diskPath = Path.Combine(PathConfig.VmsDir, $"{id}.qcow2");
 
-        // Instant create: a copy-on-write overlay file, not a full disk copy.
-        await QemuProcessLauncher.CreateOverlayAsync(golden, overlayPath, ct);
+        // A raw copy, not a COW overlay -- see VmInstance.DiskPath for why: only a real
+        // standalone file can -loadvm a snapshot baked into the golden image.
+        await QemuProcessLauncher.CreateVmDiskAsync(golden, diskPath, ct);
+        var hasSnapshot = await QemuProcessLauncher.HasEmbeddedSnapshotAsync(diskPath, ct);
 
         var adbPort = PortAllocator.FindFreePort();
         var vm = new VmInstance
         {
             Id = id,
             VersionId = version.Id,
-            OverlayPath = overlayPath,
+            DiskPath = diskPath,
             AdbHostPort = adbPort,
             MonitorPort = PortAllocator.FindFreePort(adbPort + 1),
+            HasSnapshot = hasSnapshot,
         };
 
         lock (_lock) _vms.Add(vm);
@@ -103,9 +106,10 @@ public sealed class VmManager
 
         if (wasFirstBoot)
         {
-            AppendLog(vm, "[droidbox] First boot for this VM will be slow (full cold boot). " +
-                          "Once it reaches the home screen, a snapshot is saved automatically " +
-                          "so every start after this one resumes almost instantly.");
+            AppendLog(vm, "[droidbox] No snapshot on this VM's disk yet, so this boot will be a " +
+                          "full cold boot. Once it reaches the home screen, a snapshot is saved " +
+                          "automatically so every start after this one resumes almost instantly. " +
+                          "(Golden images built with a baked-in snapshot skip this entirely.)");
             _ = WatchForFirstBootAsync(vm);
         }
     }
@@ -197,13 +201,13 @@ public sealed class VmManager
         VmChanged?.Invoke(vm);
     }
 
-    /// <summary>Instant delete: stop the process if running, then remove the small overlay file.</summary>
+    /// <summary>Instant delete: stop the process if running, then remove the VM's disk file.</summary>
     public void DeleteVm(VmInstance vm)
     {
         StopVm(vm);
 
-        if (File.Exists(vm.OverlayPath))
-            File.Delete(vm.OverlayPath);
+        if (File.Exists(vm.DiskPath))
+            File.Delete(vm.DiskPath);
 
         lock (_lock)
         {
@@ -236,8 +240,20 @@ public sealed class VmManager
         if (!File.Exists(PathConfig.StateFile))
             return;
 
-        var json = File.ReadAllText(PathConfig.StateFile);
-        var loaded = JsonSerializer.Deserialize<List<VmInstance>>(json);
+        List<VmInstance>? loaded;
+        try
+        {
+            var json = File.ReadAllText(PathConfig.StateFile);
+            loaded = JsonSerializer.Deserialize<List<VmInstance>>(json);
+        }
+        catch (JsonException)
+        {
+            // Schema changed underneath an existing state file (e.g. OverlayPath -> DiskPath).
+            // Treat as "no VMs yet" instead of crashing the app on startup -- the old disk
+            // files are orphaned but harmless leftovers under PathConfig.VmsDir.
+            return;
+        }
+
         if (loaded is null)
             return;
 

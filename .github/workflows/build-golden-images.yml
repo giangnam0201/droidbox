@@ -37,7 +37,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils squashfs-tools curl parted netpbm
+          sudo apt-get install -y qemu-system-x86 qemu-utils squashfs-tools curl parted netpbm unzip
 
       - name: Build golden image for ${{ matrix.version }}
         if: steps.gate.outputs.run == 'true'

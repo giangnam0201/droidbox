@@ -183,8 +183,83 @@ sudo mv "$SYSTEM_SFS.new" "$SYSTEM_SFS"
 sudo umount "$WORKDIR/mnt"
 sudo qemu-nbd --disconnect /dev/nbd0
 
-echo "==> Compressing final golden image"
-qemu-img convert -O qcow2 -c "$RAW_DISK" "$OUT"
+echo "==> Downloading adb (needed to detect when Android finishes booting)"
+ADB_ZIP="$WORKDIR/platform-tools.zip"
+curl -L --fail --retry 3 -o "$ADB_ZIP" "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+unzip -q -o "$ADB_ZIP" -d "$WORKDIR"
+ADB="$WORKDIR/platform-tools/adb"
+chmod +x "$ADB"
+
+echo "==> Booting the patched system once to capture a post-first-boot snapshot"
+ADB_PORT=5555
+MONITOR_PORT=45400
+qemu-system-x86_64 \
+  -m "$RAM_MB" -smp 2 \
+  "${ACCEL_ARGS[@]}" \
+  -drive file="$RAW_DISK",if=virtio,format=qcow2 \
+  -netdev "user,id=net0,hostfwd=tcp::${ADB_PORT}-:5555" \
+  -device virtio-net-pci,netdev=net0 \
+  -display none -vga std \
+  -monitor "tcp:127.0.0.1:${MONITOR_PORT},server,nowait" \
+  -no-reboot &
+QEMU_PID=$!
+
+echo "==> Waiting for Android to finish booting (up to 20 min)..."
+BOOTED=0
+for _ in $(seq 1 240); do
+  "$ADB" connect "127.0.0.1:${ADB_PORT}" >/dev/null 2>&1 || true
+  RESULT="$("$ADB" -s "127.0.0.1:${ADB_PORT}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || true)"
+  if [[ "$RESULT" == "1" ]]; then
+    BOOTED=1
+    echo "==> Boot completed"
+    break
+  fi
+  sleep 5
+done
+
+if [[ "$BOOTED" != "1" ]]; then
+  echo "!! Gave up waiting for boot_completed -- shipping this golden image WITHOUT a baked-in" >&2
+  echo "!! snapshot. DroidBox will still work, it just falls back to a local first-boot-then-" >&2
+  echo "!! snapshot on the user's machine instead of an instant first boot." >&2
+  kill "$QEMU_PID" 2>/dev/null || true
+  wait "$QEMU_PID" 2>/dev/null || true
+  unset QEMU_PID
+else
+  echo "==> Saving snapshot 'dbsnap' via QEMU monitor"
+  python3 - "$MONITOR_PORT" <<'PY'
+import socket, sys, time
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(("127.0.0.1", port))
+time.sleep(0.5)
+sock.recv(65536)
+sock.sendall(b"savevm dbsnap\n")
+time.sleep(3)
+sock.recv(65536)
+sock.sendall(b"quit\n")
+time.sleep(1)
+PY
+  wait "$QEMU_PID" 2>/dev/null || true
+  unset QEMU_PID
+fi
+
+# NOTE: deliberately NOT `qemu-img convert -c` here -- convert does not carry internal
+# snapshots over (confirmed empirically), so recompressing here would silently throw away the
+# snapshot we just spent 20 minutes creating. Ship the raw qcow2 as-is; it's still sparse
+# (qcow2 only allocates written clusters) even without the extra deflate pass.
+echo "==> Finalizing golden image (raw copy, not recompressed, to preserve the embedded snapshot)"
+cp "$RAW_DISK" "$OUT"
 sha256sum "$OUT"
+
+SIZE_MB=$(( $(stat -c%s "$OUT") / 1024 / 1024 ))
+echo "==> Final image size: ${SIZE_MB} MiB"
+MAX_MB=1900
+if (( SIZE_MB > MAX_MB )); then
+  echo "!! Final image (${SIZE_MB} MiB) exceeds the safety threshold (${MAX_MB} MiB) for a" >&2
+  echo "!! GitHub release asset (2GB hard limit). Options: shrink DISK_GB, or investigate" >&2
+  echo "!! trimming free space before shipping, or drop the boot-once snapshot step for this" >&2
+  echo "!! version and fall back to local (per-user) snapshotting only." >&2
+  exit 1
+fi
 
 echo "==> Done: $OUT"
