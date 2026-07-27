@@ -22,25 +22,20 @@ import threading
 import time
 
 STEPS = [
-    # Boot menu (isolinux): "Installation - Install Android-x86 to harddisk"
-    # is the 4th entry (Live CD/Live CD-debug/Live CD-VESA/Installation/...).
+    # Boot menu (isolinux) has 4 entries: Live CD / Live CD-debug /
+    # Installation / Advanced options... -- confirmed via screendump.
+    # Go into Advanced options (3 downs from the default first-item highlight).
     (20, ["down", "down", "down", "ret"]),
-    # Partition tool: "Create/Modify partitions" -> cfdisk
-    (5, ["ret"]),
-    (3, ["ret"]),  # cfdisk: New
-    (2, ["ret"]),  # Primary
-    (2, ["ret"]),  # full size (default)
-    (2, ["left", "ret"]),  # Bootable
-    (2, ["right", "right", "right", "right", "ret"]),  # Write
-    (2, ["y", "e", "s", "ret"]),  # confirm "yes"
-    (2, ["right", "right", "ret"]),  # cfdisk: Quit
-    # Back in installer: choose filesystem
-    (3, ["down", "ret"]),  # ext4
-    (3, ["ret"]),  # confirm format -> Yes
-    (5, ["ret"]),  # install boot loader GRUB -> Yes
-    (3, ["ret"]),  # install /system directory as read-write -> Yes
-    (60, []),  # let file copy finish (payload copy is the slow part)
-    (3, ["ret"]),  # installation complete -> Run Android-x86
+    # Advanced options submenu: Live CD-No Setup Wizard / Live CD VESA mode /
+    # Auto_Installation / Auto_Update / Boot from local drive / Back...
+    # Auto_Installation drives the whole partition+format+copy+bootloader
+    # sequence itself (no cfdisk interaction needed) -- 2 downs from the
+    # default first-item highlight.
+    (3, ["down", "down", "ret"]),
+    # Let the automatic installer run: partition, format, copy system, install
+    # GRUB. This is the slow part; give it several minutes and just observe
+    # via the periodic screendumps rather than guessing further keystrokes.
+    (240, []),
 ]
 
 KEY_ALIASES = {
