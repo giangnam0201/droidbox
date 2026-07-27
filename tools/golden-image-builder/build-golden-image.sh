@@ -41,6 +41,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cleanup() {
   local ec=$?
   [[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null || true
+  if mountpoint -q "$WORKDIR/sysimg" 2>/dev/null; then sudo umount "$WORKDIR/sysimg" || true; fi
   if mountpoint -q "$WORKDIR/mnt" 2>/dev/null; then sudo umount "$WORKDIR/mnt" || true; fi
   sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true
 
@@ -144,12 +145,37 @@ echo "==> Found system.sfs at: $SYSTEM_SFS"
 
 sudo unsquashfs -d "$WORKDIR/sysroot" "$SYSTEM_SFS"
 
-sudo tee -a "$WORKDIR/sysroot/build.prop" > /dev/null <<'PROPS'
+# On this release, system.sfs is a single-file squashfs wrapping one ext4
+# image (system.img) rather than exposing /system directly -- confirmed via
+# `unsquashfs` reporting "1 file". Loop-mount that image to reach the real
+# build.prop instead of writing a stray file next to it.
+SYSTEM_IMG="$(sudo find "$WORKDIR/sysroot" -maxdepth 2 -type f | head -n1)"
+if [[ -z "$SYSTEM_IMG" ]]; then
+  echo "!! No file found inside extracted system.sfs -- layout differs for this version." >&2
+  find "$WORKDIR/sysroot" -maxdepth 3 >&2
+  exit 1
+fi
+echo "==> system.sfs contains: $SYSTEM_IMG"
+
+mkdir -p "$WORKDIR/sysimg"
+sudo mount -o loop "$SYSTEM_IMG" "$WORKDIR/sysimg"
+
+BUILD_PROP="$(sudo find "$WORKDIR/sysimg" -maxdepth 2 -name 'build.prop' | head -n1)"
+if [[ -z "$BUILD_PROP" ]]; then
+  echo "!! build.prop not found inside $SYSTEM_IMG -- layout differs for this version." >&2
+  find "$WORKDIR/sysimg" -maxdepth 3 >&2
+  sudo umount "$WORKDIR/sysimg"
+  exit 1
+fi
+echo "==> Patching $BUILD_PROP"
+sudo tee -a "$BUILD_PROP" > /dev/null <<'PROPS'
 ro.setupwizard.mode=DISABLED
 ro.setupwizard.enterprise_mode=0
 persist.service.adb.tcp.port=5555
 ro.adb.secure=0
 PROPS
+
+sudo umount "$WORKDIR/sysimg"
 
 sudo mksquashfs "$WORKDIR/sysroot" "$SYSTEM_SFS.new" -comp xz -noappend
 sudo mv "$SYSTEM_SFS.new" "$SYSTEM_SFS"
