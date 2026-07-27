@@ -6,3 +6,4 @@ publish/
 *.qcow2
 *.iso
 .claude/
+.debug-shots/
