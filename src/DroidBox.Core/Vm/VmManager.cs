@@ -53,12 +53,14 @@ public sealed class VmManager
         // Instant create: a copy-on-write overlay file, not a full disk copy.
         await QemuProcessLauncher.CreateOverlayAsync(golden, overlayPath, ct);
 
+        var adbPort = PortAllocator.FindFreePort();
         var vm = new VmInstance
         {
             Id = id,
             VersionId = version.Id,
             OverlayPath = overlayPath,
-            AdbHostPort = PortAllocator.FindFreePort(),
+            AdbHostPort = adbPort,
+            MonitorPort = PortAllocator.FindFreePort(adbPort + 1),
         };
 
         lock (_lock) _vms.Add(vm);
@@ -70,7 +72,8 @@ public sealed class VmManager
     {
         lock (_lock) _logs[vm.Id] = new Queue<string>();
 
-        var process = QemuProcessLauncher.Start(vm, version, line => AppendLog(vm, line));
+        var wasFirstBoot = !vm.HasSnapshot;
+        var process = QemuProcessLauncher.Start(vm, version, line => OnQemuOutputLine(vm, line));
         vm.ProcessId = process.Id;
         vm.State = VmState.Running;
 
@@ -97,6 +100,68 @@ public sealed class VmManager
 
         Save();
         VmChanged?.Invoke(vm);
+
+        if (wasFirstBoot)
+        {
+            AppendLog(vm, "[droidbox] First boot for this VM will be slow (full cold boot). " +
+                          "Once it reaches the home screen, a snapshot is saved automatically " +
+                          "so every start after this one resumes almost instantly.");
+            _ = WatchForFirstBootAsync(vm);
+        }
+    }
+
+    /// <summary>Polls adb until Android reports it finished booting, then saves a QEMU snapshot
+    /// so every subsequent StartVm can resume from it instead of cold-booting again.</summary>
+    private async Task WatchForFirstBootAsync(VmInstance vm)
+    {
+        var adb = new AdbClient(PathConfig.AdbExe);
+        var deadline = DateTime.UtcNow.AddMinutes(15); // TCG cold boot can be very slow
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (vm.State != VmState.Running)
+                return; // stopped/deleted while we were waiting
+
+            var result = await adb.TryShellAsync(vm.AdbHostPort, "getprop sys.boot_completed");
+            if (result == "1")
+            {
+                AppendLog(vm, "[droidbox] Boot completed -- saving snapshot for instant future starts...");
+                try
+                {
+                    await QemuMonitorClient.SaveSnapshotAsync(vm.MonitorPort);
+                    vm.HasSnapshot = true;
+                    Save();
+                    AppendLog(vm, "[droidbox] Snapshot saved. Stop and Start this VM again and it will resume instantly.");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog(vm, $"[droidbox] Snapshot save failed (will retry cold boot next time): {ex.Message}");
+                }
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        }
+
+        AppendLog(vm, "[droidbox] Gave up waiting for boot to complete (15 min) -- no snapshot saved this run.");
+    }
+
+    private static readonly string[] WhpxFailureMarkers =
+        ["failed to initialize whpx", "WHPX: No accelerator found"];
+
+    private void OnQemuOutputLine(VmInstance vm, string line)
+    {
+        AppendLog(vm, line);
+
+        if (WhpxFailureMarkers.Any(marker => line.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+        {
+            AppendLog(vm,
+                "[droidbox] Hardware acceleration (WHPX) isn't available, so this VM is running " +
+                "in slow software emulation. To fix: open an elevated PowerShell and run " +
+                "'Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform', then " +
+                "reboot Windows. Until then, the first boot of each VM will be slow, but it only " +
+                "happens once -- after that a snapshot lets it resume instantly.");
+        }
     }
 
     private void AppendLog(VmInstance vm, string line)

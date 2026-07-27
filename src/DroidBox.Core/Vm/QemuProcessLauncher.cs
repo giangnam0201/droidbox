@@ -40,8 +40,17 @@ public static class QemuProcessLauncher
             // unreliable and boots to a black screen even when the VM is otherwise running fine.
             "-vga", "std",
             "-display", "sdl",
+            "-monitor", $"tcp:127.0.0.1:{vm.MonitorPort},server,nowait",
             "-name", $"DroidBox - {version.DisplayName} ({vm.Id})",
         };
+
+        // Resume from the saved post-first-boot snapshot instead of cold-booting again --
+        // this is what makes every start after the first one near-instant.
+        if (vm.HasSnapshot)
+        {
+            args.Add("-loadvm");
+            args.Add(QemuMonitorClient.SnapshotTag);
+        }
 
         var startInfo = new ProcessStartInfo(PathConfig.QemuSystemExe)
         {
