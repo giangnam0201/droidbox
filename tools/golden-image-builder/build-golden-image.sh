@@ -132,12 +132,15 @@ if [[ ! -b "$PART" ]]; then
 fi
 sudo mount "$PART" "$WORKDIR/mnt"
 
-SYSTEM_SFS="$WORKDIR/mnt/system.sfs"
-if [[ ! -f "$SYSTEM_SFS" ]]; then
-  echo "!! system.sfs not found at expected path — installer layout may differ for this version." >&2
-  echo "!! Inspect $WORKDIR/mnt to find it and update this script's SYSTEM_SFS path." >&2
+echo "==> Contents of installed partition:"
+find "$WORKDIR/mnt" -maxdepth 3 >&2 || true
+
+SYSTEM_SFS="$(sudo find "$WORKDIR/mnt" -name 'system.sfs' | head -n1)"
+if [[ -z "$SYSTEM_SFS" ]]; then
+  echo "!! system.sfs not found anywhere on the installed partition — installer layout differs for this version." >&2
   exit 1
 fi
+echo "==> Found system.sfs at: $SYSTEM_SFS"
 
 sudo unsquashfs -d "$WORKDIR/sysroot" "$SYSTEM_SFS"
 
