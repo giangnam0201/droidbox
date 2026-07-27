@@ -32,6 +32,9 @@ STEPS = [
     # sequence itself (no cfdisk interaction needed) -- 2 downs from the
     # default first-item highlight.
     (3, ["down", "down", "ret"]),
+    # "This is the last confirmation. Are you sure to do so?" defaults to
+    # No -- confirmed via screendump it just sits here forever otherwise.
+    (5, ["left", "ret"]),
     # Let the automatic installer run: partition, format, copy system, install
     # GRUB. This is the slow part; give it several minutes and just observe
     # via the periodic screendumps rather than guessing further keystrokes.
