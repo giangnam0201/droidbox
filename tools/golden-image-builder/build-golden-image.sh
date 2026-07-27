@@ -100,11 +100,23 @@ echo "==> Patching installed system offline (disable setup wizard, enable adb-tc
 sudo modprobe nbd max_part=8
 sudo qemu-nbd --connect=/dev/nbd0 "$RAW_DISK"
 sleep 2
+sudo partprobe /dev/nbd0 || true
+sleep 2
+echo "==> Partition table on /dev/nbd0:"
+sudo fdisk -l /dev/nbd0 || true
+lsblk /dev/nbd0 || true
 mkdir -p "$WORKDIR/mnt" "$WORKDIR/sysroot"
 
 # android-x86 installs one ext4 partition holding the installer payload,
 # including a squashfs system image (system.sfs) that holds /system read-only.
 PART="/dev/nbd0p1"
+if [[ ! -b "$PART" ]]; then
+  echo "!! $PART does not exist after partprobe — install likely didn't complete as expected." >&2
+  echo "!! Dumping last 200 lines of installer serial console for diagnosis:" >&2
+  tail -n 200 "$SERIAL_LOG" >&2 || true
+  cp "$SERIAL_LOG" "$(dirname "$OUT")/serial-debug.log" 2>/dev/null || true
+  exit 1
+fi
 sudo mount "$PART" "$WORKDIR/mnt"
 
 SYSTEM_SFS="$WORKDIR/mnt/system.sfs"
