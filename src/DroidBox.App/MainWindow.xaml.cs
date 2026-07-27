@@ -11,6 +11,7 @@ namespace DroidBox.App;
 public partial class MainWindow : Window
 {
     private readonly VmManager _vmManager = new();
+    private readonly ToolsProvisioner _tools = new();
     private readonly ObservableCollection<VmCardViewModel> _cards = [];
     private IReadOnlyList<AndroidVersion> _versions = [];
 
@@ -41,6 +42,9 @@ public partial class MainWindow : Window
         StatusText.Text = $"Creating {version.DisplayName} VM…";
         try
         {
+            var toolStatus = new Progress<string>(s => StatusText.Text = s);
+            await _tools.EnsureAllAsync(toolStatus);
+
             var progress = new Progress<double>(p => StatusText.Text = $"Downloading golden image… {p:P0}");
             var vm = await _vmManager.CreateVmAsync(version, progress);
             _cards.Add(new VmCardViewModel(vm, version));
@@ -56,13 +60,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StartButton_Click(object sender, RoutedEventArgs e)
+    private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
         var card = (VmCardViewModel)((Button)sender).Tag;
         try
         {
+            var toolStatus = new Progress<string>(s => StatusText.Text = s);
+            await _tools.EnsureAllAsync(toolStatus);
+
             _vmManager.StartVm(card.Vm, card.Version);
             card.Refresh();
+            StatusText.Text = "VM started.";
         }
         catch (Exception ex)
         {
