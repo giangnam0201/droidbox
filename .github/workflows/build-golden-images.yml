@@ -34,7 +34,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils squashfs-tools curl parted
+          sudo apt-get install -y qemu-system-x86 qemu-utils squashfs-tools curl parted netpbm
 
       - name: Build golden image for ${{ matrix.version }}
         if: steps.gate.outputs.run == 'true'
@@ -59,6 +59,15 @@ jobs:
         with:
           name: serial-debug-${{ matrix.version }}
           path: serial-debug.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload installer screenshots
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-screenshots-${{ matrix.version }}
+          path: shots/*.png
           if-no-files-found: ignore
           retention-days: 14
 

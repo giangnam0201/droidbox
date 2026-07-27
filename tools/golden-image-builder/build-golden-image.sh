@@ -35,6 +35,7 @@ ISO_PATH="$WORKDIR/android-$VERSION.iso"
 RAW_DISK="$WORKDIR/disk.qcow2"
 QMP_SOCK="$WORKDIR/qmp.sock"
 SERIAL_LOG="$WORKDIR/serial.log"
+SHOTS_DIR="$WORKDIR/shots"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cleanup() {
@@ -42,6 +43,18 @@ cleanup() {
   [[ -n "${QEMU_PID:-}" ]] && kill "$QEMU_PID" 2>/dev/null || true
   if mountpoint -q "$WORKDIR/mnt" 2>/dev/null; then sudo umount "$WORKDIR/mnt" || true; fi
   sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true
+
+  # Screenshots are the only visibility into the (headless) installer TUI --
+  # always convert+copy them next to $OUT so CI can upload them, pass or fail.
+  if [[ -d "$SHOTS_DIR" ]]; then
+    local out_shots="$(dirname "$OUT")/shots"
+    mkdir -p "$out_shots"
+    for ppm in "$SHOTS_DIR"/*.ppm; do
+      [[ -e "$ppm" ]] || continue
+      pnmtopng "$ppm" > "$out_shots/$(basename "${ppm%.ppm}").png" 2>/dev/null || true
+    done
+  fi
+
   exit $ec
 }
 trap cleanup EXIT
@@ -79,7 +92,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-python3 "$SCRIPT_DIR/send-golden-image-keys.py" --qmp-socket "$QMP_SOCK"
+python3 "$SCRIPT_DIR/send-golden-image-keys.py" --qmp-socket "$QMP_SOCK" --shots-dir "$SHOTS_DIR"
 
 echo "==> Install steps sent, requesting clean shutdown"
 python3 - "$QMP_SOCK" <<'PY'
