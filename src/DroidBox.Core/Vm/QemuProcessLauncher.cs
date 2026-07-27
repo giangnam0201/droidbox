@@ -11,11 +11,14 @@ public sealed class QemuLaunchException : Exception
 public static class QemuProcessLauncher
 {
     /// <summary>
-    /// Starts a QEMU process booting the given overlay disk with WHPX hardware acceleration.
-    /// The overlay's backing golden image already has the Android setup wizard disabled and
-    /// boot animations/services trimmed, so this reaches the home screen in seconds, not minutes.
+    /// Starts a QEMU process booting the given overlay disk. Tries WHPX hardware acceleration
+    /// first and falls back to software emulation (TCG) if WHPX isn't available on this machine
+    /// (e.g. the Windows Hypervisor Platform optional feature isn't enabled) instead of hard
+    /// failing with a silent crash. The overlay's backing golden image already has the Android
+    /// setup wizard disabled and boot animations/services trimmed, so this reaches the home
+    /// screen in seconds under WHPX (much slower under the TCG fallback).
     /// </summary>
-    public static Process Start(VmInstance vm, AndroidVersion version)
+    public static Process Start(VmInstance vm, AndroidVersion version, Action<string>? onOutputLine = null)
     {
         if (!File.Exists(PathConfig.QemuSystemExe))
             throw new QemuLaunchException($"qemu-system-x86_64.exe not found at '{PathConfig.QemuSystemExe}'.");
@@ -23,14 +26,16 @@ public static class QemuProcessLauncher
         var args = new List<string>
         {
             "-M", "pc",
-            "-accel", "whpx,kernel-irqchip=off",
+            "-accel", "whpx:tcg",
             "-cpu", "max",
             "-m", version.RamMb.ToString(),
             "-smp", "2",
             "-drive", $"file={vm.OverlayPath},if=virtio,format=qcow2",
             "-netdev", $"user,id=net0,hostfwd=tcp::{vm.AdbHostPort}-:5555",
             "-device", "virtio-net-pci,netdev=net0",
-            "-vga", "virtio",
+            // std VGA (not virtio-vga) -- android-x86's kernel driver support for virtio-gpu is
+            // unreliable and boots to a black screen even when the VM is otherwise running fine.
+            "-vga", "std",
             "-display", "sdl",
             "-name", $"DroidBox - {version.DisplayName} ({vm.Id})",
         };
@@ -38,13 +43,23 @@ public static class QemuProcessLauncher
         var startInfo = new ProcessStartInfo(PathConfig.QemuSystemExe)
         {
             UseShellExecute = false,
-            CreateNoWindow = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
         };
         foreach (var a in args)
             startInfo.ArgumentList.Add(a);
 
         var process = Process.Start(startInfo)
             ?? throw new QemuLaunchException("Failed to start QEMU process.");
+
+        if (onOutputLine is not null)
+        {
+            process.OutputDataReceived += (_, e) => { if (e.Data is not null) onOutputLine(e.Data); };
+            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) onOutputLine(e.Data); };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
 
         return process;
     }

@@ -7,10 +7,21 @@ namespace DroidBox.Core.Vm;
 
 public sealed class VmManager
 {
+    private const int MaxLogLinesPerVm = 500;
+
     private readonly GoldenImageStore _goldenStore;
     private readonly List<VmInstance> _vms = [];
     private readonly Dictionary<string, Process> _processes = [];
+    private readonly Dictionary<string, Queue<string>> _logs = [];
     private readonly object _lock = new();
+
+    /// <summary>Raised whenever a VM's runtime state changes (started, stopped, or the QEMU
+    /// process died on its own) so the UI can stop trusting a stale "Running" label.</summary>
+    public event Action<VmInstance>? VmChanged;
+
+    /// <summary>Raised for every line QEMU prints to stdout/stderr, so failures are actually
+    /// visible instead of silently disappearing.</summary>
+    public event Action<VmInstance, string>? VmLogLine;
 
     public VmManager(GoldenImageStore? goldenStore = null)
     {
@@ -22,6 +33,11 @@ public sealed class VmManager
     public IReadOnlyList<VmInstance> Vms
     {
         get { lock (_lock) return _vms.ToList(); }
+    }
+
+    public IReadOnlyList<string> GetRecentLog(VmInstance vm)
+    {
+        lock (_lock) return _logs.TryGetValue(vm.Id, out var q) ? q.ToList() : [];
     }
 
     public async Task<VmInstance> CreateVmAsync(
@@ -52,7 +68,9 @@ public sealed class VmManager
 
     public void StartVm(VmInstance vm, AndroidVersion version)
     {
-        var process = QemuProcessLauncher.Start(vm, version);
+        lock (_lock) _logs[vm.Id] = new Queue<string>();
+
+        var process = QemuProcessLauncher.Start(vm, version, line => AppendLog(vm, line));
         vm.ProcessId = process.Id;
         vm.State = VmState.Running;
 
@@ -61,13 +79,42 @@ public sealed class VmManager
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
+            var exitCode = SafeExitCode(process);
             vm.State = VmState.Stopped;
             vm.ProcessId = null;
             lock (_lock) _processes.Remove(vm.Id);
+
+            // A VM that just quit normally (user clicked Stop) already has its process removed
+            // above before this fires in practice, but if QEMU dies on its own -- e.g. because
+            // WHPX isn't available and it couldn't start at all -- this is the only signal the
+            // UI gets, so make it loud instead of leaving a stale "Running" label.
+            if (exitCode is not 0)
+                AppendLog(vm, $"[droidbox] QEMU exited with code {exitCode}.");
+
             Save();
+            VmChanged?.Invoke(vm);
         };
 
         Save();
+        VmChanged?.Invoke(vm);
+    }
+
+    private void AppendLog(VmInstance vm, string line)
+    {
+        lock (_lock)
+        {
+            if (!_logs.TryGetValue(vm.Id, out var q))
+                _logs[vm.Id] = q = new Queue<string>();
+            q.Enqueue(line);
+            while (q.Count > MaxLogLinesPerVm)
+                q.Dequeue();
+        }
+        VmLogLine?.Invoke(vm, line);
+    }
+
+    private static int? SafeExitCode(Process process)
+    {
+        try { return process.ExitCode; } catch { return null; }
     }
 
     public void StopVm(VmInstance vm)
@@ -82,6 +129,7 @@ public sealed class VmManager
         vm.State = VmState.Stopped;
         vm.ProcessId = null;
         Save();
+        VmChanged?.Invoke(vm);
     }
 
     /// <summary>Instant delete: stop the process if running, then remove the small overlay file.</summary>
@@ -92,7 +140,11 @@ public sealed class VmManager
         if (File.Exists(vm.OverlayPath))
             File.Delete(vm.OverlayPath);
 
-        lock (_lock) _vms.Remove(vm);
+        lock (_lock)
+        {
+            _vms.Remove(vm);
+            _logs.Remove(vm.Id);
+        }
         Save();
     }
 

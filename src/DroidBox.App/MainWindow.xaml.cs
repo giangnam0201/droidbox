@@ -31,6 +31,22 @@ public partial class MainWindow : Window
             if (version is not null)
                 _cards.Add(new VmCardViewModel(vm, version));
         }
+
+        // These fire from a QEMU process's own background thread, not the UI thread.
+        _vmManager.VmChanged += vm => Dispatcher.BeginInvoke(() => OnVmChanged(vm));
+        _vmManager.VmLogLine += (vm, line) => Dispatcher.BeginInvoke(() => AppendLog($"[{vm.Id}] {line}"));
+    }
+
+    private void OnVmChanged(VmInstance vm)
+    {
+        var card = _cards.FirstOrDefault(c => c.Vm.Id == vm.Id);
+        card?.Refresh();
+    }
+
+    private void AppendLog(string line)
+    {
+        LogBox.AppendText(line + Environment.NewLine);
+        LogScroll.ScrollToBottom();
     }
 
     private async void CreateButton_Click(object sender, RoutedEventArgs e)
@@ -42,17 +58,19 @@ public partial class MainWindow : Window
         StatusText.Text = $"Creating {version.DisplayName} VM…";
         try
         {
-            var toolStatus = new Progress<string>(s => StatusText.Text = s);
+            var toolStatus = new Progress<string>(s => { StatusText.Text = s; AppendLog(s); });
             await _tools.EnsureAllAsync(toolStatus);
 
             var progress = new Progress<double>(p => StatusText.Text = $"Downloading golden image… {p:P0}");
             var vm = await _vmManager.CreateVmAsync(version, progress);
             _cards.Add(new VmCardViewModel(vm, version));
             StatusText.Text = "VM created.";
+            AppendLog($"[{vm.Id}] created ({version.DisplayName}).");
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Error: {ex.Message}";
+            AppendLog($"[droidbox] Create failed: {ex}");
         }
         finally
         {
@@ -65,9 +83,10 @@ public partial class MainWindow : Window
         var card = (VmCardViewModel)((Button)sender).Tag;
         try
         {
-            var toolStatus = new Progress<string>(s => StatusText.Text = s);
+            var toolStatus = new Progress<string>(s => { StatusText.Text = s; AppendLog(s); });
             await _tools.EnsureAllAsync(toolStatus);
 
+            AppendLog($"[{card.Vm.Id}] starting…");
             _vmManager.StartVm(card.Vm, card.Version);
             card.Refresh();
             StatusText.Text = "VM started.";
@@ -75,6 +94,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             StatusText.Text = $"Error starting VM: {ex.Message}";
+            AppendLog($"[{card.Vm.Id}] Start failed: {ex}");
         }
     }
 

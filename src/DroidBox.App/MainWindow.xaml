@@ -44,6 +44,17 @@
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="16,0,0,0" Opacity="0.8"/>
         </StackPanel>
 
+        <Border DockPanel.Dock="Bottom" Background="#15161C" CornerRadius="6" Margin="0,16,0,0" Padding="10" Height="200">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Logs" FontWeight="Bold" Opacity="0.7" Margin="0,0,0,6"/>
+                <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
+                    <TextBox x:Name="LogBox" IsReadOnly="True" TextWrapping="NoWrap"
+                             FontFamily="Consolas" FontSize="12" Background="Transparent" Foreground="#C8CCD8"
+                             BorderThickness="0" VerticalScrollBarVisibility="Disabled"/>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="VmList">
                 <ItemsControl.ItemsPanel>
