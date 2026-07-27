@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3FBD8645-F81E-41E1-80D2-920D98D99CEE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DroidBox.App", "src\DroidBox.App\DroidBox.App.csproj", "{29C6E6C3-41A4-4BC3-89EF-D5398328B73C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DroidBox.Core", "src\DroidBox.Core\DroidBox.Core.csproj", "{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DroidBox.Tests", "src\DroidBox.Tests\DroidBox.Tests.csproj", "{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{29C6E6C3-41A4-4BC3-89EF-D5398328B73C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{29C6E6C3-41A4-4BC3-89EF-D5398328B73C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{29C6E6C3-41A4-4BC3-89EF-D5398328B73C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{29C6E6C3-41A4-4BC3-89EF-D5398328B73C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911}.Release|Any CPU.Build.0 = Release|Any CPU
+		{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{29C6E6C3-41A4-4BC3-89EF-D5398328B73C} = {3FBD8645-F81E-41E1-80D2-920D98D99CEE}
+		{AE4BCA4B-D316-489A-AD4C-E9B8E4A2B911} = {3FBD8645-F81E-41E1-80D2-920D98D99CEE}
+		{14E69E22-13CF-47D5-8C79-DBB5C58CAC1A} = {3FBD8645-F81E-41E1-80D2-920D98D99CEE}
+	EndGlobalSection
+EndGlobal

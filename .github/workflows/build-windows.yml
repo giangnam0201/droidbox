@@ -1,0 +1,48 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore DroidBox.sln
+
+      - name: Build
+        run: dotnet build DroidBox.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test src/DroidBox.Tests/DroidBox.Tests.csproj --no-build -c Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: src/DroidBox.Tests/TestResults/test-results.trx
+
+      - name: Publish app
+        run: >
+          dotnet publish src/DroidBox.App/DroidBox.App.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=false
+          -o publish/DroidBox.App
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DroidBox-windows
+          path: publish/DroidBox.App

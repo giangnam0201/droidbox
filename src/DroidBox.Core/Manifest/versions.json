@@ -1,0 +1,10 @@
+[
+  {
+    "Id": "7.1",
+    "DisplayName": "Android 7.1 (Nougat)",
+    "GoldenImageUrl": "https://github.com/OWNER/REPO/releases/download/golden-images/android-x86-7.1.qcow2",
+    "GoldenImageSha256": "",
+    "RamMb": 1536,
+    "DiskGb": 8
+  }
+]

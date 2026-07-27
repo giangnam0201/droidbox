@@ -1,0 +1,64 @@
+name: Build golden Android images
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Comma-separated version ids to build (default: all)"
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "7.1"
+            iso_url: "https://osdn.net/dl/android-x86/android-x86_64-7.1-r5.iso"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if not requested
+        id: gate
+        run: |
+          requested="${{ github.event.inputs.versions }}"
+          if [[ -z "$requested" || ",$requested," == *",${{ matrix.version }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils squashfs-tools curl
+
+      - name: Build golden image for ${{ matrix.version }}
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          chmod +x tools/golden-image-builder/build-golden-image.sh
+          tools/golden-image-builder/build-golden-image.sh \
+            --version "${{ matrix.version }}" \
+            --iso-url "${{ matrix.iso_url }}" \
+            --out "android-x86-${{ matrix.version }}.qcow2"
+
+      - name: Upload golden image artifact
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-image-${{ matrix.version }}
+          path: android-x86-${{ matrix.version }}.qcow2
+          retention-days: 14
+
+      - name: Publish to golden-images release
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view golden-images >/dev/null 2>&1 || \
+            gh release create golden-images --title "Golden Android images" \
+              --notes "Prebuilt android-x86 golden qcow2 disk images used by DroidBox." --prerelease
+          gh release upload golden-images "android-x86-${{ matrix.version }}.qcow2" --clobber
