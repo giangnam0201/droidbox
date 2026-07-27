@@ -172,6 +172,57 @@ touching it, especially if you add more Android versions (see Next steps #4):
 
 ## Next steps, roughly prioritized
 
+0. **Bake the snapshot into the golden image in CI instead of on the user's
+   machine — the user explicitly asked for this, it's the fastest possible
+   path to true instant-first-boot, and it should be the top priority after
+   verifying #1 below.** Right now every user's very first VM of a given
+   version still eats the full slow cold boot once, on their machine, before
+   `WatchForFirstBootAsync` can save a snapshot. If the golden image itself
+   already contained a saved snapshot, a brand new VM could resume instantly
+   on its very first start, with zero user-visible cold boot ever.
+
+   **This is not a trivial drop-in and needs verification, not blind
+   implementation** — here's the actual technical question to resolve first:
+   QEMU's internal (qcow2) snapshots are commonly understood to be looked up
+   only in the **top/active image** you boot from, not walked through a
+   backing-file chain the way normal block reads are. A DroidBox VM boots off
+   a small COW **overlay** (`overlay.qcow2`, backed by `golden.qcow2`) — if
+   you `savevm dbsnap` into `golden.qcow2` during the CI build, it is *not*
+   guaranteed that `-loadvm dbsnap` against a fresh, unrelated `overlay.qcow2`
+   will find it, because the overlay has no snapshot entries of its own.
+   **Before building automation around this, run the actual experiment**:
+   build a golden image with an embedded `dbsnap` snapshot (extend
+   `build-golden-image.sh`'s install flow to boot the installed system once,
+   wait for `adb getprop sys.boot_completed`, `savevm dbsnap`, then compress),
+   create a plain overlay from it locally, and try
+   `qemu-system-x86_64 -drive file=overlay.qcow2 ... -loadvm dbsnap`. Two
+   outcomes:
+   - **It works** (QEMU does resolve the snapshot through the backing chain,
+     or there's a supported way to make it): great, wire this into
+     `GoldenImageStore`/`VmManager.CreateVmAsync` so every new VM starts
+     already resumed, and `WatchForFirstBootAsync` becomes unnecessary for the
+     common case.
+   - **It doesn't** ("snapshot not found" or similar): fall back to two
+     cheaper wins instead of abandoning the idea:
+     (a) still have the golden-image CI build **boot the installed system
+     once and shut it down cleanly** (not just install-then-offline-patch, as
+     it does today) before compressing it — this bakes in the one-time
+     Android first-boot provisioning work (package manager scan, dalvik/ART
+     priming, etc.) so the user's "first boot" is really a much faster
+     *second* boot, even without a RAM snapshot; and
+     (b) investigate `qemu-img rebase`/external (file-based) snapshots or a
+     one-time server-side "warm the overlay" step: DroidBox could, at VM
+     creation time, boot the fresh overlay headlessly with `-loadvm` pointed
+     at the golden image's own file directly (`-drive
+     file=golden.qcow2,snapshot=on` style read-only + `-loadvm`, then
+     `block-commit`/redirect writes into the new overlay) instead of a plain
+     `qemu-img create -b` overlay. This is more involved; only pursue it if
+     (a) alone isn't fast enough.
+
+   Whichever path works, update `tools/golden-image-builder/build-golden-image.sh`,
+   `GoldenImageStore`, and `VmManager.CreateVmAsync`/`StartVm` together, and
+   update this README's "Snapshot instant resume" section to match reality.
+
 1. **Verify the snapshot feature actually works** with a real full boot →
    confirm "Snapshot saved" in the log → stop → start → confirm it's fast.
    This is unverified and is the single most important thing to check first.
