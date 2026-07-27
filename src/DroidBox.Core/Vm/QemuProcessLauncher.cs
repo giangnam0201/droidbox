@@ -26,7 +26,10 @@ public static class QemuProcessLauncher
         var args = new List<string>
         {
             "-M", "pc",
-            "-accel", "whpx:tcg",
+            // Separate -accel flags, tried in order -- "whpx:tcg" as one value is invalid
+            // syntax (confirmed via the app's log panel: "invalid accelerator whpx:tcg").
+            "-accel", "whpx",
+            "-accel", "tcg",
             "-cpu", "max",
             "-m", version.RamMb.ToString(),
             "-smp", "2",
