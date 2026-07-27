@@ -16,7 +16,7 @@ jobs:
       matrix:
         include:
           - version: "7.1"
-            iso_url: "https://osdn.net/dl/android-x86/android-x86_64-7.1-r5.iso"
+            iso_url: "https://sourceforge.net/projects/android-x86/files/Release%207.1/android-x86_64-7.1-r5.iso/download"
     steps:
       - uses: actions/checkout@v4
 
